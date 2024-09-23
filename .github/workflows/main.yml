@@ -1,0 +1,39 @@
+name: CI
+
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Download ngrok
+      run: powershell Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
+
+    - name: Extract ngrok
+      run: powershell Expand-Archive ngrok.zip -DestinationPath ngrok
+
+    - name: Authenticate ngrok
+      run: powershell .\ngrok\ngrok.exe authtoken $Env:NGROK_AUTH_TOKEN
+      env:
+        NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+
+    - name: Enable Remote Desktop (RDP)
+      run: |
+        powershell Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+        powershell Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        powershell Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
+
+    - name: Set admin password (secure)
+      run: |
+        powershell Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText $Env:ADMIN_PASSWORD -Force)
+      env:
+        ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+
+    - name: Create ngrok tunnel
+      run: powershell .\ngrok\ngrok.exe tcp 3389
+
+    - name: Display ngrok tunnel info
+      run: |
+        powershell Start-Sleep -Seconds 5  # Wait for ngrok to initialize
+        powershell Invoke-RestMethod http://127.0.0.1:4040/api/tunnels | Select-Object -ExpandProperty public_url
